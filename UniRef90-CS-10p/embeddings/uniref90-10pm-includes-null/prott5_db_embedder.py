@@ -5,7 +5,7 @@ import re
 import numpy as np
 import time as time
 
-device = torch.device('cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device: {}".format(device))
 
 tokenizer = T5Tokenizer.from_pretrained('Rostlab/prot_t5_xl_half_uniref50-enc', do_lower_case=False)
@@ -26,7 +26,7 @@ def update_embeddings_in_batch(batch, conn, cursor):
         print(f"Error updating embeddings in batch: {e}")
     return
 
-def batch_generate_embeddings(batch_size=2):
+def batch_generate_embeddings(batch_size=1):
     conn = sqlite3.connect("sep1000.db")
     cursor = conn.cursor()
     print("Connected to database")
@@ -37,7 +37,7 @@ def batch_generate_embeddings(batch_size=2):
         start = time.time()
 
         try:
-            cursor.execute("SELECT COUNT(*) FROM sequences_le_1000 WHERE embedding IS NULL")
+            cursor.execute("SELECT COUNT(*) FROM sequences_gt_1000 WHERE embedding IS NULL")
             remaining = cursor.fetchone()[0]
             if remaining == 0:
                 print("No remaining sequences to process.")
@@ -45,7 +45,7 @@ def batch_generate_embeddings(batch_size=2):
 
             print("Remaining: {}".format(remaining))
 
-            cursor.execute(f"SELECT name, sequence FROM sequences_le_1000 WHERE embedding IS NULL LIMIT {batch_size}")
+            cursor.execute(f"SELECT name, sequence FROM sequences_gt_1000 WHERE embedding IS NULL LIMIT {batch_size}")
             rows = cursor.fetchall()
 
             if not rows:
@@ -72,8 +72,8 @@ def batch_generate_embeddings(batch_size=2):
                 embedding = embedding_repr.last_hidden_state[i, :lengths[i]].mean(dim=0)
                 batch.append((embedding.cpu().numpy().tobytes(), name))
 
-
-            update_embeddings_in_batch(batch, conn, cursor)
+            print(batch)
+            # update_embeddings_in_batch(batch, conn, cursor)
 
             # Clean up memory if using GPU
             if device.type == 'cuda':
@@ -88,6 +88,8 @@ def batch_generate_embeddings(batch_size=2):
         end = time.time()
         print("Time taken: {} seconds".format(end - start))
         print("time per sequence: {} seconds".format((end - start) / batch_size))
+        break
+        print("estimated time remaining: {} minutes".format((remaining - batch_size) * (end - start) / 60))
     cursor.close()
     conn.close()
     print("Processing complete.")
